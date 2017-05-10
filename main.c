@@ -56,8 +56,8 @@ typedef struct Ty {
     // - easier to check for underflow on cons
 } Ty;
 // TODO import the actual known-size types from that header...
-Ty I32 = { kind_I32, 0 };
-Ty F64 = { kind_F64, 0 };
+static Ty I32 = { kind_I32, 0 };
+static Ty F64 = { kind_F64, 0 };
 Ty STRUCT(int size) { Ty v = { kind_STRUCT, size }; return v; }
 
 int eq_ty(Ty a, Ty b) { return !memcmp(&a, &b, sizeof(Ty)); }
