@@ -95,11 +95,51 @@ Ty   unsafe_pop_type ()      { return *type_ptr++; }
 // TODO add struct operations
 // - watch out for stack underflow when consing
 
+// TODO add C FFI
+// - type-tag for a function needs to include argument and result types
+
+// TODO add custom type-tag operations
+// - make a fresh type tag
+// - construct/destruct of a newtype only touches the type stack
+
+// TODO can you define safe heap ops in userland in terms of newtype+malloc+refcounting?
+
+
+////////////////////////////////////////////////
+// safe operations
+////////////////////////////////////////////////
+
 void push_i32(i32 v) { unsafe_push_type(I32); unsafe_push_data_i32(v); }
 void push_f64(f64 v) { unsafe_push_type(F64); unsafe_push_data_f64(v); }
 i32 pop_i32() { Ty t = unsafe_pop_type(); assert_eq_ty(t, I32); return unsafe_pop_data_i32(); }
 f64 pop_f64() { Ty t = unsafe_pop_type(); assert_eq_ty(t, F64); return unsafe_pop_data_f64(); }
 
+// TODO need more stack operations for local variables...
+
+
+////////////////////////////////////////////////
+// more ops - defined in terms of safe push/pop
+////////////////////////////////////////////////
+
+#define DEF_BINOP_FOR_TYPE(t, name, op) \
+    void name##_##t() { t x=pop_##t(); t y=pop_##t(); push_##t(x op y); }
+#define DEF_BINOP(name, op) \
+    DEF_BINOP_FOR_TYPE(i32, name, op) \
+    DEF_BINOP_FOR_TYPE(f64, name, op)
+
+// arithmetic
+DEF_BINOP(add, +)
+DEF_BINOP(sub, -)
+DEF_BINOP(mul, *)
+DEF_BINOP(div, /)
+DEF_BINOP_FOR_TYPE(i32, mod, %)
+// TODO relational operators must always return a boolean
+
+
+
+////////////////////////////////////////////////
+// entry point
+////////////////////////////////////////////////
 
 int main() {
     push_i32(3);
@@ -107,7 +147,8 @@ int main() {
     push_f64(5);
 
     f64 f = pop_f64(); // 5.0
+    add_i32();
     i32 x = pop_i32(); // 4
-    i32 y = pop_i32(); // 3
-    printf("%d %d %f\n", y, x, f); // 3 4 5.0
+    ///i32 y = pop_i32(); // 3
+    printf("%d %f\n", x, f); // 7 5.0
 }
