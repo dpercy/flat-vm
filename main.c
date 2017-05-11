@@ -6,6 +6,29 @@
 
 /*
 
+TODO how do local variables work? unlike values on a stack, local variables are mutable.
+and changing a value means it could change size.
+    local x = {1, 2}
+    local y = {3, 4}
+    x = {5, 6, 7, 8, 9}  # how do you grow the storage here?
+some options:
+- use heap boxes and realloc for locals
+  - defeats the purpose of this experiment!!!
+- require locals to be immutable; use local continuations for loops
+  - are you going to pass *all* the locals though?
+  - needs more compiler work
+  - good for closures anyway
+- require locals to not change size!
+  - when initializing a local, just push
+  - when mutating a local, raise an error if the size changes
+so assuming we prohibit mutating locals,
+maybe we can compile a subset of scheme to this VM.
+no loops: just let-labels like in "Compiling without Continuations"
+
+
+
+
+
 Key things to avoid:
     - mixing up sizes of flat types
     - mixing up references and flat types
@@ -122,7 +145,7 @@ f64 pop_f64() { Ty t = unsafe_pop_type(); assert_eq_ty(t, F64); return unsafe_po
 ////////////////////////////////////////////////
 
 #define DEF_BINOP_FOR_TYPE(t, name, op) \
-    void name##_##t() { t x=pop_##t(); t y=pop_##t(); push_##t(x op y); }
+    void name##_##t() { t right=pop_##t(); t left=pop_##t(); push_##t(left op right); }
 #define DEF_BINOP(name, op) \
     DEF_BINOP_FOR_TYPE(i32, name, op) \
     DEF_BINOP_FOR_TYPE(f64, name, op)
@@ -134,6 +157,8 @@ DEF_BINOP(mul, *)
 DEF_BINOP(div, /)
 DEF_BINOP_FOR_TYPE(i32, mod, %)
 // TODO relational operators must always return a boolean
+DEF_BINOP_FOR_TYPE(i32, lt, <)
+
 
 
 
@@ -141,14 +166,49 @@ DEF_BINOP_FOR_TYPE(i32, mod, %)
 // entry point
 ////////////////////////////////////////////////
 
-int main() {
-    push_i32(3);
-    push_i32(4);
-    push_f64(5);
+void dup_i32() {
+    i32 x = pop_i32();
+    push_i32(x);
+    push_i32(x);
+}
 
-    f64 f = pop_f64(); // 5.0
-    add_i32();
-    i32 x = pop_i32(); // 4
-    ///i32 y = pop_i32(); // 3
-    printf("%d %f\n", x, f); // 7 5.0
+void swap_i32() {
+    i32 x = pop_i32();
+    i32 y = pop_i32();
+    push_i32(x);
+    push_i32(y);
+}
+
+// [ i32 ] -> [ i32 ]
+void fib() {
+    // n
+    dup_i32(); // n n
+    push_i32(2); // n n 2
+    lt_i32(); // n (n < 2)
+    if (pop_i32()) {
+        // n
+    } else {
+        // n
+        dup_i32(); // n n
+        push_i32(1); // n n 1
+        sub_i32(); // n (n - 1)
+        fib(); // n fib(n - 1)
+        swap_i32(); // fib(n - 1) n
+        push_i32(2); // fib(n - 1) n 2
+        sub_i32(); // fib(n - 1) (n - 2)
+        fib(); // fib(n - 1) fib(n - 2)
+        add_i32();
+    }
+}
+
+i32 fib_C(i32 n) {
+    push_i32(n);
+    fib();
+    return pop_i32();
+}
+
+int main() {
+    for (i32 i=0; i<33; ++i) {
+        printf("%d %d\n", i, fib_C(i));
+    }
 }
