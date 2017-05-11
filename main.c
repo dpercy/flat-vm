@@ -83,8 +83,8 @@ static Ty I32 = { kind_I32, 0 };
 static Ty F64 = { kind_F64, 0 };
 Ty STRUCT(int size) { Ty v = { kind_STRUCT, size }; return v; }
 
-int eq_ty(Ty a, Ty b) { return !memcmp(&a, &b, sizeof(Ty)); }
-void assert_eq_ty(Ty a, Ty b) {
+inline int eq_ty(Ty a, Ty b) { return !memcmp(&a, &b, sizeof(Ty)); }
+inline void assert_eq_ty(Ty a, Ty b) {
     if (!eq_ty(a, b)) {
         printf("a = { %d, %d }; b = { %d, %d }\n", a.kind, a.struct_len, b.kind, b.struct_len);
         assert(0 && "type tag mismatch");
@@ -101,19 +101,19 @@ typedef double f64;
 // these two buffers don't necessarily need the same size:
 //  all-scalar data needs 1 type byte per data word.
 //  but deeply nested structs need more type bytes.
-int data_buffer[1024 * 1024];
-Ty  type_buffer[1024 * 1024];
+static int data_buffer[1024 * 1024];
+static Ty  type_buffer[1024 * 1024];
 void *data_ptr = (void*)&data_buffer + sizeof(data_buffer);
 Ty   *type_ptr = &type_buffer[sizeof(type_buffer)/sizeof(type_buffer[0]) - 1];
 // type_ptr starts with one dummy/zero/uninitialized element to prevent underflow
 
-void unsafe_push_data_i32(i32 v) { data_ptr -= sizeof(i32); *(i32*)data_ptr = v; }
-void unsafe_push_data_f64(f64 v) { data_ptr -= sizeof(f64); *(f64*)data_ptr = v; }
-i32 unsafe_pop_data_i32() { i32 v = *(i32*)data_ptr; data_ptr += sizeof(i32); return v; }
-f64 unsafe_pop_data_f64() { f64 v = *(f64*)data_ptr; data_ptr += sizeof(f64); return v; }
+inline void unsafe_push_data_i32(i32 v) { data_ptr -= sizeof(i32); *(i32*)data_ptr = v; }
+inline void unsafe_push_data_f64(f64 v) { data_ptr -= sizeof(f64); *(f64*)data_ptr = v; }
+inline i32 unsafe_pop_data_i32() { i32 v = *(i32*)data_ptr; data_ptr += sizeof(i32); return v; }
+inline f64 unsafe_pop_data_f64() { f64 v = *(f64*)data_ptr; data_ptr += sizeof(f64); return v; }
 
-void unsafe_push_type(Ty ty) { *--type_ptr = ty; }
-Ty   unsafe_pop_type ()      { return *type_ptr++; }
+inline void unsafe_push_type(Ty ty) { *--type_ptr = ty; }
+inline Ty   unsafe_pop_type ()      { return *type_ptr++; }
 
 // TODO add struct operations
 // - watch out for stack underflow when consing
@@ -132,10 +132,10 @@ Ty   unsafe_pop_type ()      { return *type_ptr++; }
 // safe operations
 ////////////////////////////////////////////////
 
-void push_i32(i32 v) { unsafe_push_type(I32); unsafe_push_data_i32(v); }
-void push_f64(f64 v) { unsafe_push_type(F64); unsafe_push_data_f64(v); }
-i32 pop_i32() { Ty t = unsafe_pop_type(); assert_eq_ty(t, I32); return unsafe_pop_data_i32(); }
-f64 pop_f64() { Ty t = unsafe_pop_type(); assert_eq_ty(t, F64); return unsafe_pop_data_f64(); }
+inline void push_i32(i32 v) { unsafe_push_type(I32); unsafe_push_data_i32(v); }
+inline void push_f64(f64 v) { unsafe_push_type(F64); unsafe_push_data_f64(v); }
+inline i32 pop_i32() { Ty t = unsafe_pop_type(); assert_eq_ty(t, I32); return unsafe_pop_data_i32(); }
+inline f64 pop_f64() { Ty t = unsafe_pop_type(); assert_eq_ty(t, F64); return unsafe_pop_data_f64(); }
 
 // TODO need more stack operations for local variables...
 
@@ -145,7 +145,7 @@ f64 pop_f64() { Ty t = unsafe_pop_type(); assert_eq_ty(t, F64); return unsafe_po
 ////////////////////////////////////////////////
 
 #define DEF_BINOP_FOR_TYPE(t, name, op) \
-    void name##_##t() { t right=pop_##t(); t left=pop_##t(); push_##t(left op right); }
+    inline void name##_##t() { t right=pop_##t(); t left=pop_##t(); push_##t(left op right); }
 #define DEF_BINOP(name, op) \
     DEF_BINOP_FOR_TYPE(i32, name, op) \
     DEF_BINOP_FOR_TYPE(f64, name, op)
@@ -166,13 +166,13 @@ DEF_BINOP_FOR_TYPE(i32, lt, <)
 // entry point
 ////////////////////////////////////////////////
 
-void dup_i32() {
+inline void dup_i32() {
     i32 x = pop_i32();
     push_i32(x);
     push_i32(x);
 }
 
-void swap_i32() {
+inline void swap_i32() {
     i32 x = pop_i32();
     i32 y = pop_i32();
     push_i32(x);

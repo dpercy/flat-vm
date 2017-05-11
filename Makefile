@@ -1,6 +1,8 @@
 
+CC = clang
+
 # standard warnings and optimization
-flags = -Wall -O3
+flags = -Wall -O3 -g
 # trying to eliminate those pesky memory operations on the stack pointers
 flags += -mcmodel=medium
 
@@ -12,13 +14,13 @@ flags += -mcmodel=medium
 ## -Wl,-no_pie
 link_flags = -Wl,-no_pie
 
-default: vm
+default: vm main.s
 
 main.s: main.c
-	gcc main.c $(flags) -S -o main.s
+	$(CC) main.c $(flags) -S -o main.s
 
-vm: main.s
-	gcc main.s $(link_flags) -o vm
+vm: main.c
+	$(CC) main.c $(flags) $(link_flags) -o vm
 
 clean:
 	rm -f main.s vm
