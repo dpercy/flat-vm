@@ -146,7 +146,7 @@ void print_stack() {
     printf("\n");
 }
 void debug_print_stack() {
-    print_stack();
+    //print_stack();
 }
 
 // TODO add C FFI
@@ -432,37 +432,32 @@ void bench_fib() {
 }
 
 void bench_sum() {
-    /*
+    f64 max = 1000000.0;
+    push_f64(0.0); // sum
+    push_f64(0.0); // sum i
+    while ((grab(0), push_f64(max), lt_f64(), pop_i32())) {
+        // sum i
+        grab(1); grab(1); add_f64(); // sum i sum'
+        grab(1); push_f64(1.0); add_f64(); // sum i sum' i'
+        cut(2, 2);
+    }
+    pop_f64();
+    f64 sum = pop_f64();
+    printf("bench_sum %f\n", sum);
+}
 
-    sum i
-    while i < upper bound
-        sum' = sum + i
-        i' = i + 1
-        sum, i := sum', i'
-    */
-
-    TODO need grab and cut to do this
-    while ((push_f32(1000000.0), 
-
-    {
-            }
-
-    */
+void bench_sum_native() {
+    f64 sum = 0.0;
+    for (f64 i = 0.0; i < 1000000.0; ++i) {
+        sum += i;
+    }
+    printf("bench_sum %f\n", sum);
 }
 
 int main() {
     assert(sizeof(i32) == 4);
     assert(sizeof(f64) == 8);
 
-    push_f64(42);
-    push_f64(666);
-    construct(2);
-    destruct(2);
-    f64 y = pop_f64();
-    f64 x = pop_f64();
-    printf("%f %f\n", x, y);
-
-    for (i32 i=0; i<3; ++i) {
-        printf("%d %d\n", i, fib_C(i));
-    }
+    //bench_sum_native();
+    bench_sum();
 }
