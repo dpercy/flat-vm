@@ -2,7 +2,7 @@
 CC = clang
 
 # standard warnings and optimization
-flags = -Wall -O3 -g
+flags = -Wall -O2 -g
 # trying to eliminate those pesky memory operations on the stack pointers
 ##flags += -mcmodel=medium
 
@@ -12,7 +12,6 @@ flags = -Wall -O3 -g
 ## /var/folders/d1/_38mp30s0x9_bcdzk156fl1w0000gp/T/main-4489f9.o. To
 ## fix this warning, don't compile with -mdynamic-no-pic or link with
 ## -Wl,-no_pie
-link_flags = 
 link_flags = -Wl,-no_pie
 
 default: vm main.s
