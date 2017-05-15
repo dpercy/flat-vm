@@ -3,6 +3,9 @@
 #include <math.h>
 #include <assert.h>
 #include <string.h>
+#include <ctype.h>
+
+#define inline
 
 /*
 
@@ -91,8 +94,8 @@ inline void assert_eq_ty(Ty a, Ty b) {
     }
 }
 
-typedef int    i32;
-typedef double f64;
+typedef int32_t  i32;
+typedef double_t f64;
 
 ////////////////////////////////////////////////
 // stacks and unsafe operations
@@ -101,22 +104,50 @@ typedef double f64;
 // these two buffers don't necessarily need the same size:
 //  all-scalar data needs 1 type byte per data word.
 //  but deeply nested structs need more type bytes.
-static int data_buffer[1024 * 1024];
-static Ty  type_buffer[1024 * 1024];
-void *data_ptr = (void*)&data_buffer + sizeof(data_buffer);
-Ty   *type_ptr = &type_buffer[sizeof(type_buffer)/sizeof(type_buffer[0]) - 1];
+static char data_buffer[4 * 1024 * 1024];
+static Ty   type_buffer[1024 * 1024];
+static char *data_ptr = &data_buffer[0];
+static Ty   *type_ptr = &type_buffer[1];
 // type_ptr starts with one dummy/zero/uninitialized element to prevent underflow
 
-inline void unsafe_push_data_i32(i32 v) { data_ptr -= sizeof(i32); *(i32*)data_ptr = v; }
-inline void unsafe_push_data_f64(f64 v) { data_ptr -= sizeof(f64); *(f64*)data_ptr = v; }
-inline i32 unsafe_pop_data_i32() { i32 v = *(i32*)data_ptr; data_ptr += sizeof(i32); return v; }
-inline f64 unsafe_pop_data_f64() { f64 v = *(f64*)data_ptr; data_ptr += sizeof(f64); return v; }
+inline void unsafe_push_data_i32(i32 v) { *(i32*)data_ptr = v; data_ptr += sizeof(i32); }
+inline void unsafe_push_data_f64(f64 v) { *(f64*)data_ptr = v; data_ptr += sizeof(f64); }
+inline i32 unsafe_pop_data_i32() { data_ptr -= sizeof(i32); i32 v = *(i32*)data_ptr; return v; }
+inline f64 unsafe_pop_data_f64() { data_ptr -= sizeof(f64); f64 v = *(f64*)data_ptr; return v; }
 
-inline void unsafe_push_type(Ty ty) { *--type_ptr = ty; }
-inline Ty   unsafe_pop_type ()      { return *type_ptr++; }
+inline void unsafe_push_type(Ty ty) { *type_ptr++ = ty; }
+inline Ty   unsafe_pop_type ()      { return *--type_ptr; }
 
-// TODO add struct operations
-// - watch out for stack underflow when consing
+void print_stack() {
+    // iterate over the type stack nodes from left to right: oldest-pushed first.
+    char *dp = &data_buffer[0];
+    for (Ty *tp = &type_buffer[0]; tp < type_ptr; ++tp) {
+        assert(dp <= data_ptr);
+        switch (tp->kind) {
+            case kind_UNINITIALIZED:
+                printf("[ undef ]");
+                break;
+            case kind_I32:
+                printf("[ i32 %d ]", *(i32*)dp);
+                dp += sizeof(i32);
+                break;
+            case kind_F64:
+                printf("[ f64 %f ]", *(f64*)dp);
+                dp += sizeof(f64);
+                break;
+            case kind_STRUCT:
+                printf(" s%d ", tp->struct_len);
+                break;
+            default:
+                assert(0 && "bad kind on type stack");
+                break;
+        }
+    }
+    printf("\n");
+}
+void debug_print_stack() {
+    print_stack();
+}
 
 // TODO add C FFI
 // - type-tag for a function needs to include argument and result types
@@ -132,32 +163,149 @@ inline Ty   unsafe_pop_type ()      { return *type_ptr++; }
 // safe operations
 ////////////////////////////////////////////////
 
-inline void push_i32(i32 v) { unsafe_push_type(I32); unsafe_push_data_i32(v); }
-inline void push_f64(f64 v) { unsafe_push_type(F64); unsafe_push_data_f64(v); }
-inline i32 pop_i32() { Ty t = unsafe_pop_type(); assert_eq_ty(t, I32); return unsafe_pop_data_i32(); }
-inline f64 pop_f64() { Ty t = unsafe_pop_type(); assert_eq_ty(t, F64); return unsafe_pop_data_f64(); }
+// num_values is a higher-level concept than the data or type stack:
+// - data stack contains raw bytes
+// - type stack contains type constructor nodes; a single struct value takes up several of these.
+// num_values simply means how many pushes ever done, minus how many pops ever done.
+static int   num_values = 0;
+inline void push_i32(i32 v) { unsafe_push_type(I32); unsafe_push_data_i32(v); ++num_values; debug_print_stack(); }
+inline void push_f64(f64 v) { unsafe_push_type(F64); unsafe_push_data_f64(v); ++num_values; debug_print_stack(); }
+inline i32 pop_i32() { Ty t = unsafe_pop_type(); assert_eq_ty(t, I32); --num_values; i32 v = unsafe_pop_data_i32(); debug_print_stack(); return v; }
+inline f64 pop_f64() { Ty t = unsafe_pop_type(); assert_eq_ty(t, F64); --num_values; f64 v = unsafe_pop_data_f64(); debug_print_stack(); return v; }
+inline void construct(int num_fields) {
+    // check for underflow
+    assert(num_values >= num_fields);
+    unsafe_push_type(STRUCT(num_fields));
+    num_values -= num_fields; // remove the fields
+    num_values++; // add the struct
+    debug_print_stack();
+}
+inline void destruct(int num_fields) {
+    Ty t = unsafe_pop_type();
+    assert_eq_ty(t, STRUCT(num_fields));
+    num_values--; // remove the struct
+    num_values += num_fields; // add the fields back on
+    debug_print_stack();
+}
+typedef struct stackindex { Ty *tp; char *dp; } stackindex;
+stackindex scan_back(int num_to_skip, Ty *ty_start, char *data_start) {
+    // TODO optimize this to not need a loop:
+    // maybe keep a table that lets you index back with one indirection.
+    // but: keeping that table up to date could be hard for the cut operation.
+    //   - you could memmove the table just like the other stacks, except the ptr targets also moved
+    //   - maybe the table could store some kind of offset?
+    stackindex result;
+    result.tp = ty_start;
+    result.dp = data_start;
+    int remaining_elements = num_to_skip;
+    while (remaining_elements > 0) {
+        --result.tp;
+        switch (result.tp->kind) {
+            case kind_UNINITIALIZED:
+                assert(0 && "underflow in scan_back");
+                break;
+            case kind_I32:
+                result.dp -= sizeof(i32);
+                --remaining_elements;
+                break;
+            case kind_F64:
+                result.dp -= sizeof(f64);
+                --remaining_elements;
+                break;
+            case kind_STRUCT:
+                // no need to update data pointer in this case
+                // instead, if the struct has 4 fields, we decrement remaining_elements for the struct,
+                --remaining_elements;
+                // but now there are 4 additional items to scan back over,
+                // so increment remaining_elements by struct_len.
+                remaining_elements += result.tp->struct_len;
+                break;
+            default:
+                assert(0 && "bad kind in scan_back");
+                break;
+        }
+    }
+    return result;
+}
+inline void grab(int index) {
+    assert(index < num_values && "underflow in grab");
+    // find the indexth element of the stack and push a copy of it
 
-// TODO need more stack operations for local variables...
+    // skip backwards over `index` items
+    stackindex right_index = scan_back(index, type_ptr, data_ptr);
+    // skip to start of item we want to grab
+    stackindex left_index = scan_back(1, right_index.tp, right_index.dp);
+    // update type stack
+    {
+        int nnodes = right_index.tp - left_index.tp;
+        memcpy(type_ptr, left_index.tp, nnodes*sizeof(Ty));
+        type_ptr += nnodes;
+    }
+    // update value stack
+    {
+        int nbytes = right_index.dp - left_index.dp;
+        memcpy(data_ptr, left_index.dp, nbytes);
+        data_ptr += nbytes;
+    }
+    // update num_values
+    ++num_values;
+
+    debug_print_stack();
+}
+inline void cut(int start, int num_to_remove) {
+    // skip over `start` elements, and remove `num_to_remove`
+
+    // skip backwards over `start` items
+    stackindex right_index = scan_back(start, type_ptr, data_ptr);
+    // skip backwards over `num_to_remove` additional items
+    stackindex left_index = scan_back(num_to_remove, right_index.tp, right_index.dp);
+    // update type stack
+    {
+        int nnodes_to_move = type_ptr - right_index.tp;
+        memmove(left_index.tp, right_index.tp, nnodes_to_move*sizeof(Ty));
+        int nnodes_to_cut = right_index.tp - left_index.tp;
+        type_ptr -= nnodes_to_cut;
+    }
+    // update data stack
+    {
+        int nbytes_to_move = data_ptr - right_index.dp;
+        memmove(left_index.dp, right_index.dp, nbytes_to_move);
+        int nbytes_to_cut = right_index.dp - left_index.dp;
+        data_ptr -= nbytes_to_cut;
+    }
+    // update num_values
+    num_values -= num_to_remove;
+ 
+    debug_print_stack();
+}
 
 
 ////////////////////////////////////////////////
 // more ops - defined in terms of safe push/pop
 ////////////////////////////////////////////////
 
-#define DEF_BINOP_FOR_TYPE(t, name, op) \
-    inline void name##_##t() { t right=pop_##t(); t left=pop_##t(); push_##t(left op right); }
-#define DEF_BINOP(name, op) \
-    DEF_BINOP_FOR_TYPE(i32, name, op) \
-    DEF_BINOP_FOR_TYPE(f64, name, op)
+#define DEF_BINOP_FOR_TYPE(arg, ret, name, op) \
+    inline void name##_##arg() { arg right=pop_##arg(); arg left=pop_##arg(); push_##ret(left op right); }
+#define DEF_BINOP_ARITH(name, op) \
+    DEF_BINOP_FOR_TYPE(i32, i32, name, op) \
+    DEF_BINOP_FOR_TYPE(f64, f64, name, op)
+#define DEF_BINOP_REL(name, op) \
+    DEF_BINOP_FOR_TYPE(i32, i32, name, op) \
+    DEF_BINOP_FOR_TYPE(f64, i32, name, op)
 
 // arithmetic
-DEF_BINOP(add, +)
-DEF_BINOP(sub, -)
-DEF_BINOP(mul, *)
-DEF_BINOP(div, /)
-DEF_BINOP_FOR_TYPE(i32, mod, %)
-// TODO relational operators must always return a boolean
-DEF_BINOP_FOR_TYPE(i32, lt, <)
+DEF_BINOP_ARITH(add, +)
+DEF_BINOP_ARITH(sub, -)
+DEF_BINOP_ARITH(mul, *)
+DEF_BINOP_ARITH(div, /)
+DEF_BINOP_FOR_TYPE(i32, i32, mod, %)
+// comparisons
+DEF_BINOP_REL(lt,  <)
+DEF_BINOP_REL(lte, <=)
+DEF_BINOP_REL(gt,  >)
+DEF_BINOP_REL(gte, >=)
+DEF_BINOP_REL(eq,  ==)
+DEF_BINOP_REL(neq, !=)
 
 
 
@@ -177,6 +325,10 @@ inline void swap_i32() {
     i32 y = pop_i32();
     push_i32(x);
     push_i32(y);
+}
+
+inline void sqrt_f64() {
+    push_f64(sqrt(pop_f64()));
 }
 
 // [ i32 ] -> [ i32 ]
@@ -207,8 +359,110 @@ i32 fib_C(i32 n) {
     return pop_i32();
 }
 
-int main() {
+void add_vec2() {
+    // a{x, y} b{x, y}
+    // TODO need a bunch of stack operations to make this work!
+    // - grab an arbitrary value at index i and push it
+    // - cut out a region of the stack, to return the top few elements
+
+    /*
+    plan:
+        ax, ay = destruct a
+        bx, by = destruct b
+        construct(ax + bx, ay + by)
+
+        // Without compiler support, we need to copy the argument to destruct.
+        // - can you do linear-type inference on the expr lang?
+        // - can peephole opt on the bytecode avoid the copy??
+        //   - you want to float the destruct earlier in the stream, then merge it with the dup??
+        grab a
+        destruct 2
+        grab b
+        destruct 2
+        // ax ay bx by
+        grab ax
+        grab bx
+        add
+        grab bx
+        grab by
+        add
+        construct 2
+        // a{x, y} b{x, y} ax ay bx by c{x, y}
+        cut 6 stack values, skipping 1
+        // c{x, y}
+        // now we can return.
+
+        so the new instructions are:
+            - dup(grab) i
+            - cut start end
+
+    * /
+    // a{ax, ay} b{bx, by}
+    grab(1);
+    destruct(2);
+    // a{ax, ay} b{bx, by} ax ay
+    grab(2);
+    destruct(2);
+    // a{ax, ay} b{bx, by} ax ay bx by
+    grab(3);
+    // a{ax, ay} b{bx, by} ax ay bx by ax
+    grab(2);
+    // a{ax, ay} b{bx, by} ax ay bx by ax bx
+    add_f64();
+    // a{ax, ay} b{bx, by} ax ay bx by cx
+    grab(3);
+    // a{ax, ay} b{bx, by} ax ay bx by cx ay
+    grab(2);
+    // a{ax, ay} b{bx, by} ax ay bx by cx ay by
+    add_f64();
+    // a{ax, ay} b{bx, by} ax ay bx by cx cy
+    construct(2);
+    // a{ax, ay} b{bx, by} ax ay bx by c{cx, cy}
+    cut(1, 6); // skip 1 and cut 6 values
+    // c{cx, cy}
+    // */
+}
+
+void bench_fib() {
+    // compare to
+    // time python -c 'fib = lambda n: n if n < 2 else fib(n-1) + fib(n-2); print fib(32)'
     for (i32 i=0; i<33; ++i) {
+        printf("%d %d\n", i, fib_C(i));
+    }
+}
+
+void bench_sum() {
+    /*
+
+    sum i
+    while i < upper bound
+        sum' = sum + i
+        i' = i + 1
+        sum, i := sum', i'
+    */
+
+    TODO need grab and cut to do this
+    while ((push_f32(1000000.0), 
+
+    {
+            }
+
+    */
+}
+
+int main() {
+    assert(sizeof(i32) == 4);
+    assert(sizeof(f64) == 8);
+
+    push_f64(42);
+    push_f64(666);
+    construct(2);
+    destruct(2);
+    f64 y = pop_f64();
+    f64 x = pop_f64();
+    printf("%f %f\n", x, y);
+
+    for (i32 i=0; i<3; ++i) {
         printf("%d %d\n", i, fib_C(i));
     }
 }
