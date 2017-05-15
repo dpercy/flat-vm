@@ -432,7 +432,7 @@ void bench_fib() {
 }
 
 void bench_sum() {
-    f64 max = 1000000.0;
+    f64 max = 1.0e8;
     push_f64(0.0); // sum
     push_f64(0.0); // sum i
     while ((grab(0), push_f64(max), lt_f64(), pop_i32())) {
