@@ -81,8 +81,12 @@ op := + - * / % < <= > >= == !=
             (parameterize ([ENV (append (reverse lhses) (ENV))])
               (compile body)))]
     ; TODO functions
-    ; TODO conditionals
-    ))
+    [`(if ,test ,consq ,alt) (lines (compile test)
+                                    "if (pop_i32()) {"
+                                    (compile consq)
+                                    "} else {"
+                                    (compile alt)
+                                    "}")]))
 
 (define (opname op)
   (match op
