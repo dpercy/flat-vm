@@ -48,7 +48,8 @@ op := + - * / % < <= > >= == !=
   (check-equal? (line 1 2 3) "123")
   (check-equal? (line "foo(" 1.2 ");") "foo(1.2);"))
 (define (lines . args)
-  (apply string-append (add-between (flatten args) "\n")))
+  (apply string-append (add-between (remove* (list "") (flatten args))
+                                    "\n")))
 (module+ test
   (check-equal? (lines "a" "b" "c") "a\nb\nc")
   (check-equal? (lines "0" "1" '("2" "3")) "0\n1\n2\n3")
