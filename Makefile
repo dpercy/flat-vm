@@ -19,5 +19,11 @@ default: bench
 bench: bench.c
 	$(CC) bench.c $(flags) $(link_flags) -o bench
 
+%.generated.c: %.ss
+	racket compile.rkt <$< >$@
+%.exe: %.generated.c
+	$(CC) $< $(flags) $(link_flags) -o $@
+
+
 clean:
 	rm -rf bench.s bench bench.dSYM
