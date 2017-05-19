@@ -14,16 +14,12 @@ flags = -Wall -O3 -g
 ## -Wl,-no_pie
 link_flags = -Wl,-no_pie
 
-default: bench
-
-bench: bench.c
-	$(CC) bench.c $(flags) $(link_flags) -o bench
+default: hello.exe
 
 %.generated.c: %.ss
 	racket compile.rkt <$< >$@
 %.exe: %.generated.c
 	$(CC) $< $(flags) $(link_flags) -o $@
 
-
 clean:
-	rm -rf bench.s bench bench.dSYM
+	rm -rf *.exe *.generated.c *.dSYM
