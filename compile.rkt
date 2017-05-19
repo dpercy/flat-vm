@@ -10,16 +10,17 @@ program := expr
 funcdef :=
 | (define (funcname var ...) expr)
 
+stmt :=
+| (return expr)
+| (if expr stmt stmt)
+| (let1 var expr stmt)
+| (let1 (struct var ...) expr stmt)
 
-; TODO support floats. problem is VM arithmetic is monomorphic.
 expr :=
 | integer
 | (op expr ...)
 | (struct expr ...)
-| (let1 var expr expr)
-| (let1 (struct var ...) expr expr)
 | (funcname expr ...)
-| (if expr expr expr)
 
 op := + - * / % < <= > >= == !=
 
@@ -30,9 +31,10 @@ op := + - * / % < <= > >= == !=
   '(
     program
     define
+    return
     struct
-    let1
     if
+    let1
     ))
 (define binops '(+ - * / % < <= > >= == !=))
 (define (binop? v) (member v binops))
@@ -55,41 +57,30 @@ op := + - * / % < <= > >= == !=
 
 
 (define ENV (make-parameter '())) ; list of symbols
+(define (env-variable-index env x)
+  (or (for/first ([i (in-naturals)]
+                  [e (in-list env)]
+                  #:when (equal? x e))
+        i)
+      (error 'compile-expr "unbound variable: ~v in ENV: ~v" x (ENV))))
+(define (env-push-temp env)
+  (cons "tmp" env))
+(define (env-push-vars env vars)
+  (append (reverse vars) env))
+(define (env-return-cutcount env)
+  ; valid because functions cannot be nested:
+  ; the number of params and local we need to cut is simply the size of the ENV.
+  (length env))
+
+
 (define (compile-expr sexpr) ; -> string
   (match sexpr
     [(? fixnum? n) (line "push_i32(" n ");")]
-    [(? symbol? x) (or (for/first ([i (in-naturals)]
-                                   [e (in-list (ENV))]
-                                   #:when (equal? x e))
-                         (line "grab(" i ");")
-                         )
-                       (error 'compile-expr "unbound variable: ~v in ENV: ~v" x (ENV)))]
+    [(? symbol? x) (line "grab(" (env-variable-index (ENV) x) ");")]
     [`(,(? binop? op) ,x ,y) (lines (compile-exprs (list x y))
                                     (line (opname op) "_i32();"))]
     [`(struct ,args ...) (lines (compile-exprs args)
                                 (line "construct(" (length args) ");"))]
-    [`(let1 ,(? iden? lhs) ,rhs ,body)
-     (lines (compile-expr rhs)
-            (parameterize ([ENV (cons lhs (ENV))])
-              (compile-expr body))
-            (line "cut(1, 1);")
-            )]
-    [`(let1 (struct ,(? iden? lhses) ...) ,rhs ,body)
-     (lines (compile-expr rhs)
-            (line "destruct(" (length lhses) ");")
-            ; rightmost binds are innermost / top of env stack,
-            ; because (let1 (struct a b) (struct 1 2) body) == (let1 a 1 (let1 b 2 body))
-            (parameterize ([ENV (append (reverse lhses) (ENV))])
-              (compile-expr body))
-            ; pop all the locals back off
-            (line "cut(1, " (length lhses) ");"))]
-
-    [`(if ,test ,consq ,alt) (lines (compile-expr test)
-                                    "if (pop_i32()) {"
-                                    (compile-expr consq)
-                                    "} else {"
-                                    (compile-expr alt)
-                                    "}")]
     [`(,(? iden? callee) ,args ...) (lines (compile-expr `(struct ,@args))
                                            ; all functions take a single struct
                                            (line callee "();"))]
@@ -100,7 +91,7 @@ op := + - * / % < <= > >= == !=
   (match sexprs
     ['() ""]
     [(cons hd tl) (lines (compile-expr hd)
-                         (parameterize ([ENV (cons "tmp" (ENV))])
+                         (parameterize ([ENV (env-push-temp (ENV))])
                            (compile-exprs tl)))]))
 
 (define (compile-program sexpr)
@@ -115,12 +106,38 @@ op := + - * / % < <= > >= == !=
     [`(define (,name ,params ...) ,body)
      (lines (line "void " name "() {")
             (line "debug_print(" (~s (format "enter ~a" name)) ");")
+            ; unpack the single arguments-struct
             (line "destruct(" (length params) ");")
-            (parameterize ([ENV (append (reverse params) (ENV))])
-              (compile-expr body))
-            (line "cut(1, " (length params) ");")
+            ; env needs to track
+            ; 1. for each variable name, its offset
+            ; 2. how many variables to pop when doing a return
+            ; 3. soon: how many variables to pop when jumping to some label
+            (parameterize* ([ENV (env-push-vars (ENV) params)])
+              (compile-stmt body))
             (line "debug_print(" (~s (format "exit ~a" name)) ");")
             (line "}"))]))
+
+(define (compile-stmt sexpr)
+  (match sexpr
+    [`(return ,v) (lines (compile-expr v)
+                         (line "cut(1, " (env-return-cutcount (ENV)) ");"))]
+    [`(if ,test ,consq ,alt) (lines (compile-expr test)
+                                    "if (pop_i32()) {"
+                                    (compile-stmt consq)
+                                    "} else {"
+                                    (compile-stmt alt)
+                                    "}")]
+    [`(let1 ,(? iden? lhs) ,rhs ,body)
+     (lines (compile-expr rhs)
+            (parameterize ([ENV (env-push-vars (ENV) (list lhs))])
+              (compile-stmt body)))]
+    [`(let1 (struct ,(? iden? lhses) ...) ,rhs ,body)
+     (lines (compile-expr rhs)
+            (line "destruct(" (length lhses) ");")
+            ; rightmost binds are innermost / top of env stack,
+            ; because (let1 (struct a b) (struct 1 2) body) == (let1 a 1 (let1 b 2 body))
+            (parameterize ([ENV (env-push-vars (ENV) lhses)])
+              (compile-stmt body)))]))
 
 (define compile "DO NOT CALL THIS")
 
