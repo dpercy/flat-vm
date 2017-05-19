@@ -55,7 +55,7 @@ op := + - * / % < <= > >= == !=
 
 
 (define ENV (make-parameter '())) ; list of symbols
-(define (compile sexpr) ; -> string
+(define (compile-expr sexpr) ; -> string
   (match sexpr
     [(? fixnum? n) (line "push_i32(" n ");")]
     [(? symbol? x) (or (for/first ([i (in-naturals)]
@@ -63,30 +63,66 @@ op := + - * / % < <= > >= == !=
                                    #:when (equal? x e))
                          (line "grab(" i ");")
                          )
-                       (error 'compile "unbound variable: ~v in ENV: ~v" x (ENV)))]
-    [`(,(? binop? op) ,x ,y) (lines (compile x)
-                                    (compile y)
+                       (error 'compile-expr "unbound variable: ~v in ENV: ~v" x (ENV)))]
+    [`(,(? binop? op) ,x ,y) (lines (compile-exprs (list x y))
                                     (line (opname op) "_i32();"))]
-    [`(struct ,args ...) (lines (map compile args)
+    [`(struct ,args ...) (lines (compile-exprs args)
                                 (line "construct(" (length args) ");"))]
     [`(let1 ,(? iden? lhs) ,rhs ,body)
-     (lines (compile rhs)
+     (lines (compile-expr rhs)
             (parameterize ([ENV (cons lhs (ENV))])
-              (compile body)))]
+              (compile-expr body))
+            (line "cut(1, 1);")
+            )]
     [`(let1 (struct ,(? iden? lhses) ...) ,rhs ,body)
-     (lines (compile rhs)
+     (lines (compile-expr rhs)
             (line "destruct(" (length lhses) ");")
             ; rightmost binds are innermost / top of env stack,
             ; because (let1 (struct a b) (struct 1 2) body) == (let1 a 1 (let1 b 2 body))
             (parameterize ([ENV (append (reverse lhses) (ENV))])
-              (compile body)))]
-    ; TODO functions
-    [`(if ,test ,consq ,alt) (lines (compile test)
+              (compile-expr body))
+            ; pop all the locals back off
+            (line "cut(1, " (length lhses) ");"))]
+
+    [`(if ,test ,consq ,alt) (lines (compile-expr test)
                                     "if (pop_i32()) {"
-                                    (compile consq)
+                                    (compile-expr consq)
                                     "} else {"
-                                    (compile alt)
-                                    "}")]))
+                                    (compile-expr alt)
+                                    "}")]
+    [`(,(? iden? callee) ,args ...) (lines (compile-expr `(struct ,@args))
+                                           ; all functions take a single struct
+                                           (line callee "();"))]
+
+    ; TODO jumps / ghc join points / local continuations
+    ))
+(define (compile-exprs sexprs)
+  (match sexprs
+    ['() ""]
+    [(cons hd tl) (lines (compile-expr hd)
+                         (parameterize ([ENV (cons "tmp" (ENV))])
+                           (compile-exprs tl)))]))
+
+(define (compile-program sexpr)
+  (match sexpr
+    [`(program ,funcdefs ... ,expr)
+     (lines (map compile-funcdef funcdefs)
+            "int main() {"
+            (compile-expr expr)
+            "}")]))
+(define (compile-funcdef sexpr)
+  (match sexpr
+    [`(define (,name ,params ...) ,body)
+     (lines (line "void " name "() {")
+            (line "debug_print(" (~s (format "enter ~a" name)) ");")
+            (line "destruct(" (length params) ");")
+            (parameterize ([ENV (append (reverse params) (ENV))])
+              (compile-expr body))
+            (line "cut(1, " (length params) ");")
+            (line "debug_print(" (~s (format "exit ~a" name)) ");")
+            (line "}"))]))
+
+(define compile "DO NOT CALL THIS")
 
 (define (opname op)
   (match op
@@ -106,7 +142,4 @@ op := + - * / % < <= > >= == !=
   (displayln
 
    (lines "#include \"vm.c\""
-          "int main() {"
-          (compile (read))
-          "}"
-          )))
+          (compile-program (read)))))

@@ -150,6 +150,9 @@ void print_stack() {
 void debug_print_stack() {
     print_stack();
 }
+void debug_print(char *msg) {
+    printf("%s\n", msg);
+}
 
 // TODO add C FFI
 // - type-tag for a function needs to include argument and result types
@@ -333,34 +336,6 @@ inline void sqrt_f64() {
     push_f64(sqrt(pop_f64()));
 }
 
-// [ i32 ] -> [ i32 ]
-void fib() {
-    // n
-    dup_i32(); // n n
-    push_i32(2); // n n 2
-    lt_i32(); // n (n < 2)
-    if (pop_i32()) {
-        // n
-    } else {
-        // n
-        dup_i32(); // n n
-        push_i32(1); // n n 1
-        sub_i32(); // n (n - 1)
-        fib(); // n fib(n - 1)
-        swap_i32(); // fib(n - 1) n
-        push_i32(2); // fib(n - 1) n 2
-        sub_i32(); // fib(n - 1) (n - 2)
-        fib(); // fib(n - 1) fib(n - 2)
-        add_i32();
-    }
-}
-
-i32 fib_C(i32 n) {
-    push_i32(n);
-    fib();
-    return pop_i32();
-}
-
 void add_vec2() {
     assert(0 && "TODO impl add_vec2");
     // a{x, y} b{x, y}
@@ -424,14 +399,6 @@ void add_vec2() {
     cut(1, 6); // skip 1 and cut 6 values
     // c{cx, cy}
     // */
-}
-
-void bench_fib() {
-    // compare to
-    // time python -c 'fib = lambda n: n if n < 2 else fib(n-1) + fib(n-2); print fib(32)'
-    for (i32 i=0; i<33; ++i) {
-        printf("%d %d\n", i, fib_C(i));
-    }
 }
 
 void bench_sum() {
