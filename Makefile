@@ -2,7 +2,7 @@
 CC = clang
 
 # standard warnings and optimization
-flags = -Wall -O2 -g
+flags = -Wall -O3 -g
 # trying to eliminate those pesky memory operations on the stack pointers
 ##flags += -mcmodel=medium
 
@@ -14,13 +14,10 @@ flags = -Wall -O2 -g
 ## -Wl,-no_pie
 link_flags = -Wl,-no_pie
 
-default: vm main.s
+default: bench
 
-main.s: main.c
-	$(CC) main.c $(flags) -S -o main.s
-
-vm: main.c
-	$(CC) main.c $(flags) $(link_flags) -o vm
+bench: bench.c
+	$(CC) bench.c $(flags) $(link_flags) -o bench
 
 clean:
-	rm -rf main.s vm vm.dSYM
+	rm -rf bench.s bench bench.dSYM

@@ -5,6 +5,8 @@
 #include <string.h>
 #include <ctype.h>
 
+
+// TODO why is inlining not working? missing symbols??
 #define inline
 
 /*
@@ -82,8 +84,8 @@ typedef struct Ty {
     // - easier to check for underflow on cons
 } Ty;
 // TODO import the actual known-size types from that header...
-static Ty I32 = { kind_I32, 0 };
-static Ty F64 = { kind_F64, 0 };
+Ty I32 = { kind_I32, 0 };
+Ty F64 = { kind_F64, 0 };
 Ty STRUCT(int size) { Ty v = { kind_STRUCT, size }; return v; }
 
 inline int eq_ty(Ty a, Ty b) { return !memcmp(&a, &b, sizeof(Ty)); }
@@ -104,10 +106,10 @@ typedef double_t f64;
 // these two buffers don't necessarily need the same size:
 //  all-scalar data needs 1 type byte per data word.
 //  but deeply nested structs need more type bytes.
-static char data_buffer[4 * 1024 * 1024];
-static Ty   type_buffer[1024 * 1024];
-static char *data_ptr = &data_buffer[0];
-static Ty   *type_ptr = &type_buffer[1];
+char data_buffer[4 * 1024 * 1024];
+Ty   type_buffer[1024 * 1024];
+char *data_ptr = &data_buffer[0];
+Ty   *type_ptr = &type_buffer[1];
 // type_ptr starts with one dummy/zero/uninitialized element to prevent underflow
 
 inline void unsafe_push_data_i32(i32 v) { *(i32*)data_ptr = v; data_ptr += sizeof(i32); }
@@ -146,7 +148,7 @@ void print_stack() {
     printf("\n");
 }
 void debug_print_stack() {
-    //print_stack();
+    print_stack();
 }
 
 // TODO add C FFI
@@ -167,7 +169,7 @@ void debug_print_stack() {
 // - data stack contains raw bytes
 // - type stack contains type constructor nodes; a single struct value takes up several of these.
 // num_values simply means how many pushes ever done, minus how many pops ever done.
-static int   num_values = 0;
+int   num_values = 0;
 inline void push_i32(i32 v) { unsafe_push_type(I32); unsafe_push_data_i32(v); ++num_values; debug_print_stack(); }
 inline void push_f64(f64 v) { unsafe_push_type(F64); unsafe_push_data_f64(v); ++num_values; debug_print_stack(); }
 inline i32 pop_i32() { Ty t = unsafe_pop_type(); assert_eq_ty(t, I32); --num_values; i32 v = unsafe_pop_data_i32(); debug_print_stack(); return v; }
@@ -360,6 +362,7 @@ i32 fib_C(i32 n) {
 }
 
 void add_vec2() {
+    assert(0 && "TODO impl add_vec2");
     // a{x, y} b{x, y}
     // TODO need a bunch of stack operations to make this work!
     // - grab an arbitrary value at index i and push it
@@ -454,10 +457,4 @@ void bench_sum_native() {
     printf("bench_sum %f\n", sum);
 }
 
-int main() {
-    assert(sizeof(i32) == 4);
-    assert(sizeof(f64) == 8);
 
-    //bench_sum_native();
-    bench_sum();
-}
