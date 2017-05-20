@@ -14,7 +14,8 @@ flags = -Wall -O3 -g
 ## -Wl,-no_pie
 link_flags = -Wl,-no_pie
 
-default: hello.exe
+.PRECIOUS: %.generated.c
+default: hello.exe vecs.exe loop.exe
 
 %.generated.c: %.ss
 	racket compile.rkt <$< >$@
