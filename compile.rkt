@@ -57,6 +57,17 @@ op := + - * / % < <= > >= == !=
   (check-equal? (lines "0" "1" '("2" "3")) "0\n1\n2\n3")
   (check-equal? (lines "1" '("2" "3")) "1\n2\n3")
   (check-equal? (lines '("2" "3")) "2\n3"))
+(define (indent . args)
+  ; args is a tree of strings
+  (lines (for/list ([s (flatten args)])
+           (string-append "  "
+                          (string-replace s
+                                          "\n"
+                                          "\n  ")))))
+(module+ test
+  (check-equal? (indent "4") "  4")
+  (check-equal? (indent (indent "4")) "    4")
+  (check-equal? (indent "x:\n  y") "  x:\n    y"))
 
 ; an env is either:
 ; '()
@@ -127,20 +138,18 @@ op := + - * / % < <= > >= == !=
     [`(program ,funcdefs ... ,expr)
      (lines (map compile-funcdef funcdefs)
             "int main() {"
-            (compile-expr expr)
+            (indent (compile-expr expr)
+                    (line "print_stack();"))
             "}")]))
 (define (compile-funcdef sexpr)
   (match sexpr
     [`(define (,name ,params ...) ,body)
      (lines (line "void " name "() {")
-            ; unpack the single arguments-struct
-            (line "destruct(" (length params) ");")
-            ; env needs to track
-            ; 1. for each variable name, its offset
-            ; 2. how many variables to pop when doing a return
-            ; 3. soon: how many variables to pop when jumping to some label
-            (parameterize* ([ENV (env-push-vars (ENV) params)])
-              (compile-stmt body))
+            (indent
+             ; unpack the single arguments-struct
+             (line "destruct(" (length params) ");")
+             (parameterize* ([ENV (env-push-vars (ENV) params)])
+               (compile-stmt body)))
             (line "}"))]))
 
 (define (compile-stmt sexpr)
@@ -150,9 +159,9 @@ op := + - * / % < <= > >= == !=
                          (line "return;"))]
     [`(if ,test ,consq ,alt) (lines (compile-expr test)
                                     "if (pop_i32()) {"
-                                    (compile-stmt consq)
+                                    (indent (compile-stmt consq))
                                     "} else {"
-                                    (compile-stmt alt)
+                                    (indent (compile-stmt alt))
                                     "}")]
     [`(let1 ,(? iden? lhs) ,rhs ,body)
      (lines (compile-expr rhs)
@@ -191,8 +200,9 @@ op := + - * / % < <= > >= == !=
   (match sexpr
     [(list name params body)
      (lines (line name ":")
-            (parameterize ([ENV (env-push-vars (ENV) params)])
-              (compile-stmt body)))]))
+            (indent
+             (parameterize ([ENV (env-push-vars (ENV) params)])
+               (compile-stmt body))))]))
 
 (define compile "DO NOT CALL THIS")
 
@@ -213,5 +223,5 @@ op := + - * / % < <= > >= == !=
 (module+ main
   (displayln
 
-   (lines "#include \"vm.c\""
+   (lines "#include \"vm.h\""
           (compile-program (read)))))

@@ -5,9 +5,7 @@
 #include <string.h>
 #include <ctype.h>
 
-
-// TODO why is inlining not working? missing symbols??
-#define inline
+#define inline static inline
 
 /*
 

@@ -12,14 +12,14 @@ flags = -Wall -O3 -g
 ## /var/folders/d1/_38mp30s0x9_bcdzk156fl1w0000gp/T/main-4489f9.o. To
 ## fix this warning, don't compile with -mdynamic-no-pic or link with
 ## -Wl,-no_pie
-link_flags = -Wl,-no_pie
+##link_flags = -Wl,-no_pie
 
 .PRECIOUS: %.generated.c
 default: hello.exe vecs.exe loop.exe
 
 %.generated.c: %.ss compile.rkt
 	racket compile.rkt <$< >$@
-%.exe: %.generated.c vm.c
+%.exe: %.generated.c vm.h
 	$(CC) $< $(flags) $(link_flags) -o $@
 
 clean:
