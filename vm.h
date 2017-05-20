@@ -9,29 +9,6 @@
 
 /*
 
-TODO how do local variables work? unlike values on a stack, local variables are mutable.
-and changing a value means it could change size.
-    local x = {1, 2}
-    local y = {3, 4}
-    x = {5, 6, 7, 8, 9}  # how do you grow the storage here?
-some options:
-- use heap boxes and realloc for locals
-  - defeats the purpose of this experiment!!!
-- require locals to be immutable; use local continuations for loops
-  - are you going to pass *all* the locals though?
-  - needs more compiler work
-  - good for closures anyway
-- require locals to not change size!
-  - when initializing a local, just push
-  - when mutating a local, raise an error if the size changes
-so assuming we prohibit mutating locals,
-maybe we can compile a subset of scheme to this VM.
-no loops: just let-labels like in "Compiling without Continuations"
-
-
-
-
-
 Key things to avoid:
     - mixing up sizes of flat types
     - mixing up references and flat types
@@ -81,7 +58,6 @@ typedef struct Ty {
     // - makes it easier to copy
     // - easier to check for underflow on cons
 } Ty;
-// TODO import the actual known-size types from that header...
 Ty I32 = { kind_I32, 0 };
 Ty F64 = { kind_F64, 0 };
 Ty STRUCT(int size) { Ty v = { kind_STRUCT, size }; return v; }
@@ -332,71 +308,6 @@ inline void swap_i32() {
 
 inline void sqrt_f64() {
     push_f64(sqrt(pop_f64()));
-}
-
-void add_vec2() {
-    assert(0 && "TODO impl add_vec2");
-    // a{x, y} b{x, y}
-    // TODO need a bunch of stack operations to make this work!
-    // - grab an arbitrary value at index i and push it
-    // - cut out a region of the stack, to return the top few elements
-
-    /*
-    plan:
-        ax, ay = destruct a
-        bx, by = destruct b
-        construct(ax + bx, ay + by)
-
-        // Without compiler support, we need to copy the argument to destruct.
-        // - can you do linear-type inference on the expr lang?
-        // - can peephole opt on the bytecode avoid the copy??
-        //   - you want to float the destruct earlier in the stream, then merge it with the dup??
-        grab a
-        destruct 2
-        grab b
-        destruct 2
-        // ax ay bx by
-        grab ax
-        grab bx
-        add
-        grab bx
-        grab by
-        add
-        construct 2
-        // a{x, y} b{x, y} ax ay bx by c{x, y}
-        cut 6 stack values, skipping 1
-        // c{x, y}
-        // now we can return.
-
-        so the new instructions are:
-            - dup(grab) i
-            - cut start end
-
-    * /
-    // a{ax, ay} b{bx, by}
-    grab(1);
-    destruct(2);
-    // a{ax, ay} b{bx, by} ax ay
-    grab(2);
-    destruct(2);
-    // a{ax, ay} b{bx, by} ax ay bx by
-    grab(3);
-    // a{ax, ay} b{bx, by} ax ay bx by ax
-    grab(2);
-    // a{ax, ay} b{bx, by} ax ay bx by ax bx
-    add_f64();
-    // a{ax, ay} b{bx, by} ax ay bx by cx
-    grab(3);
-    // a{ax, ay} b{bx, by} ax ay bx by cx ay
-    grab(2);
-    // a{ax, ay} b{bx, by} ax ay bx by cx ay by
-    add_f64();
-    // a{ax, ay} b{bx, by} ax ay bx by cx cy
-    construct(2);
-    // a{ax, ay} b{bx, by} ax ay bx by c{cx, cy}
-    cut(1, 6); // skip 1 and cut 6 values
-    // c{cx, cy}
-    // */
 }
 
 void bench_sum() {
