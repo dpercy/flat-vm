@@ -10,7 +10,7 @@
                     (loop (+ i 1) (+ sum i)))])
     (loop 1 0)))
 
-(triangle 3)
+(triangle 100000000)
                     
     
 

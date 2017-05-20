@@ -17,9 +17,9 @@ link_flags = -Wl,-no_pie
 .PRECIOUS: %.generated.c
 default: hello.exe vecs.exe loop.exe
 
-%.generated.c: %.ss
+%.generated.c: %.ss compile.rkt
 	racket compile.rkt <$< >$@
-%.exe: %.generated.c
+%.exe: %.generated.c vm.c
 	$(CC) $< $(flags) $(link_flags) -o $@
 
 clean:

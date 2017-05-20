@@ -148,10 +148,10 @@ void print_stack() {
     printf("\n");
 }
 void debug_print_stack() {
-    print_stack();
+    //print_stack();
 }
 void debug_print(char *msg) {
-    printf("%s\n", msg);
+    //printf("%s\n", msg);
 }
 
 // TODO add C FFI
